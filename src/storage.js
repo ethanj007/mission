@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db, CHANNEL_ID } from './firebase';
-import { doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { supabase, CHANNEL_ID } from './supabase';
 
 const KEYS = {
   TASKS: 'mission_bubu_tasks',
@@ -24,27 +23,34 @@ export const getYesterdayDateString = () => {
   return getLocalDateString(yesterday);
 };
 
-// --- FIRESTORE UTILS (Non-blocking background calls) ---
+// --- DATABASE UTILS (Non-blocking background calls) ---
 
 const saveTaskToFirestore = (task) => {
-  const taskRef = doc(db, 'channels', CHANNEL_ID, 'tasks', task.id);
-  setDoc(taskRef, task, { merge: true }).catch(error => {
-    console.error('Error saving task to Firestore', error);
-  });
+  supabase
+    .from('tasks')
+    .upsert(task)
+    .then(({ error }) => {
+      if (error) console.error('Error saving task to Supabase', error);
+    });
 };
 
 const deleteTaskFromFirestore = (taskId) => {
-  const taskRef = doc(db, 'channels', CHANNEL_ID, 'tasks', taskId);
-  deleteDoc(taskRef).catch(error => {
-    console.error('Error deleting task from Firestore', error);
-  });
+  supabase
+    .from('tasks')
+    .delete()
+    .eq('id', taskId)
+    .then(({ error }) => {
+      if (error) console.error('Error deleting task from Supabase', error);
+    });
 };
 
 export const saveProgressToFirestore = (streak, history) => {
-  const progressRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-  setDoc(progressRef, { streak, history }, { merge: true }).catch(error => {
-    console.error('Error saving progress to Firestore', error);
-  });
+  supabase
+    .from('progress')
+    .upsert({ id: CHANNEL_ID, streak, history }, { onConflict: 'id' })
+    .then(({ error }) => {
+      if (error) console.error('Error saving progress to Supabase', error);
+    });
 };
 
 // --- TASKS API ---
@@ -284,16 +290,27 @@ export const seedInitialTasksIfEmpty = async () => {
       }];
       await saveHistory(initialHistory);
 
-      // Async writeBatch for background setup
-      const batch = writeBatch(db);
-      initialTasks.forEach((task) => {
-        const taskRef = doc(db, 'channels', CHANNEL_ID, 'tasks', task.id);
-        batch.set(taskRef, task);
-      });
-      const progressRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-      batch.set(progressRef, { streak: initialStreak, history: initialHistory });
-      
-      batch.commit().catch(e => console.error("Error committing initial batch", e));
+      // Background setup in Supabase
+      supabase
+        .from('tasks')
+        .upsert(initialTasks)
+        .then(({ error }) => {
+          if (error) console.error("Error seeding tasks in Supabase", error);
+        });
+
+      supabase
+        .from('progress')
+        .upsert({
+          id: CHANNEL_ID,
+          streak: initialStreak,
+          history: initialHistory,
+          restDuration: 60,
+          restStartTime: null,
+          isStudying: false
+        })
+        .then(({ error }) => {
+          if (error) console.error("Error seeding progress in Supabase", error);
+        });
     }
   } catch (error) {
     console.error('Error seeding tasks', error);

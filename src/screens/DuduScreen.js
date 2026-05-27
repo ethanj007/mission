@@ -13,8 +13,7 @@ import {
   StatusBar
 } from 'react-native';
 import DuduCharacter from '../components/DuduCharacter';
-import { db, CHANNEL_ID } from '../firebase';
-import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { supabase, CHANNEL_ID } from '../supabase';
 import {
   getTasks,
   saveTasks,
@@ -75,25 +74,50 @@ export default function DuduScreen({ onBack }) {
   useEffect(() => {
     setupCalendar();
     
-    // 1. Listen to Firestore tasks collection in real-time
-    const tasksCollectionRef = collection(db, 'channels', CHANNEL_ID, 'tasks');
-    const unsubscribeTasks = onSnapshot(tasksCollectionRef, async (querySnapshot) => {
-      const fbTasks = [];
-      querySnapshot.forEach((doc) => {
-        fbTasks.push(doc.data());
-      });
-      
+    // 1. Fetch initial tasks and subscribe in real-time
+    const handleTasksUpdated = async (fbTasks) => {
       setTasks(fbTasks);
       await saveTasks(fbTasks);
-    });
+    };
 
-    // 2. Listen to Bubu's progress (streak & history) in real-time
-    const progressDocRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-    const unsubscribeProgress = onSnapshot(progressDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setBubuProgress(docSnap.data());
-      }
-    });
+    supabase
+      .from('tasks')
+      .select('*')
+      .then(({ data }) => {
+        if (data) handleTasksUpdated(data);
+      });
+
+    const tasksChannel = supabase
+      .channel('tasks-dudu')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        supabase.from('tasks').select('*').then(({ data }) => {
+          if (data) handleTasksUpdated(data);
+        });
+      })
+      .subscribe();
+
+    // 2. Fetch initial progress and subscribe in real-time
+    const handleProgressUpdated = (data) => {
+      setBubuProgress(data);
+    };
+
+    supabase
+      .from('progress')
+      .select('*')
+      .eq('id', CHANNEL_ID)
+      .single()
+      .then(({ data }) => {
+        if (data) handleProgressUpdated(data);
+      });
+
+    const progressChannel = supabase
+      .channel('progress-dudu')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'progress', filter: `id=eq.${CHANNEL_ID}` }, (payload) => {
+        if (payload.new) {
+          handleProgressUpdated(payload.new);
+        }
+      })
+      .subscribe();
 
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -110,8 +134,8 @@ export default function DuduScreen({ onBack }) {
     return () => {
       clearTimeout(timer);
       clearInterval(ticker);
-      unsubscribeTasks();
-      unsubscribeProgress();
+      supabase.removeChannel(tasksChannel);
+      supabase.removeChannel(progressChannel);
     };
   }, [fadeAnim]);
 
@@ -123,8 +147,10 @@ export default function DuduScreen({ onBack }) {
 
   const updateRestDuration = async (seconds) => {
     try {
-      const progressRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-      await setDoc(progressRef, { restDuration: Number(seconds) }, { merge: true });
+      await supabase
+        .from('progress')
+        .update({ restDuration: Number(seconds) })
+        .eq('id', CHANNEL_ID);
       setDuduState('nodding');
       setTimeout(() => setDuduState('idle'), 1500);
     } catch (e) {

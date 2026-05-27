@@ -15,8 +15,7 @@ import {
 import { Image } from 'expo-image';
 import * as Notifications from 'expo-notifications';
 import Confetti from '../components/Confetti';
-import { db, CHANNEL_ID } from '../firebase';
-import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { supabase, CHANNEL_ID } from '../supabase';
 import { getTasks, updateDailyProgress, getStreakData, getHistory, getLocalDateString, updateTask, saveTasks } from '../storage';
 import { SHADOWS, BORDER_RADIUS, SPACING } from '../components/Theme';
 
@@ -166,14 +165,17 @@ export default function BubuScreen({ onBack }) {
       setTimeLeft(remaining);
       if (remaining <= 0) {
         clearInterval(interval);
-        // Clear restStartTime in Firestore when timer ends
-        const progressRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-        setDoc(progressRef, { restStartTime: null }, { merge: true }).then(() => {
-          Alert.alert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
-        }).catch(err => {
-          console.error("Error clearing restStartTime:", err);
-          Alert.alert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
-        });
+        // Clear restStartTime in Supabase when timer ends
+        supabase
+          .from('progress')
+          .update({ restStartTime: null })
+          .eq('id', CHANNEL_ID)
+          .then(() => {
+            Alert.alert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
+          }).catch(err => {
+            console.error("Error clearing restStartTime:", err);
+            Alert.alert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
+          });
       }
     }, 1000);
 
@@ -183,15 +185,7 @@ export default function BubuScreen({ onBack }) {
   useEffect(() => {
     loadStats();
 
-    // Listen to Firestore tasks collection in real-time
-    const tasksCollectionRef = collection(db, 'channels', CHANNEL_ID, 'tasks');
-    const unsubscribeTasks = onSnapshot(tasksCollectionRef, async (querySnapshot) => {
-      const fbTasks = [];
-      querySnapshot.forEach((doc) => {
-        fbTasks.push(doc.data());
-      });
-
-      // Filter tasks assigned to today and tomorrow
+    const handleTasksUpdated = async (fbTasks) => {
       const todayTasks = fbTasks.filter(t => t.assignedDate === todayStr);
       const tomTasks = fbTasks.filter(t => t.assignedDate === tomorrowStr);
       
@@ -216,24 +210,57 @@ export default function BubuScreen({ onBack }) {
         setTimeout(() => setShowConfetti(false), 4000);
       }
       setPrevCompleted(isAllDone);
-    });
+    };
+
+    const handleProgressUpdated = (data) => {
+      if (data.restDuration !== undefined) {
+        setRestDuration(data.restDuration);
+      }
+      if (data.restStartTime !== undefined) {
+        setRestStartTime(data.restStartTime);
+      }
+      if (data.isStudying !== undefined) {
+        setIsStudying(data.isStudying);
+      }
+    };
+
+    // Fetch initial tasks
+    supabase
+      .from('tasks')
+      .select('*')
+      .then(({ data }) => {
+        if (data) handleTasksUpdated(data);
+      });
+
+    // Fetch initial progress
+    supabase
+      .from('progress')
+      .select('*')
+      .eq('id', CHANNEL_ID)
+      .single()
+      .then(({ data }) => {
+        if (data) handleProgressUpdated(data);
+      });
+
+    // Listen to Supabase tasks collection in real-time
+    const tasksChannel = supabase
+      .channel('tasks-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        supabase.from('tasks').select('*').then(({ data }) => {
+          if (data) handleTasksUpdated(data);
+        });
+      })
+      .subscribe();
 
     // Listen to Bubu's progress/settings document in real-time
-    const progressDocRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-    const unsubscribeProgress = onSnapshot(progressDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.restDuration !== undefined) {
-          setRestDuration(data.restDuration);
+    const progressChannel = supabase
+      .channel('progress-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'progress', filter: `id=eq.${CHANNEL_ID}` }, (payload) => {
+        if (payload.new) {
+          handleProgressUpdated(payload.new);
         }
-        if (data.restStartTime !== undefined) {
-          setRestStartTime(data.restStartTime);
-        }
-        if (data.isStudying !== undefined) {
-          setIsStudying(data.isStudying);
-        }
-      }
-    });
+      })
+      .subscribe();
 
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -242,8 +269,8 @@ export default function BubuScreen({ onBack }) {
     }).start();
 
     return () => {
-      unsubscribeTasks();
-      unsubscribeProgress();
+      supabase.removeChannel(tasksChannel);
+      supabase.removeChannel(progressChannel);
     };
   }, [fadeAnim, prevCompleted]);
 
@@ -308,15 +335,17 @@ export default function BubuScreen({ onBack }) {
       const totalToday = todayTasks.length;
       const completedToday = todayTasks.filter(t => t.completed).length;
 
-      const progressRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-
       if (changedTask.completed) {
         triggerKissAttack();
       }
 
       // If all tasks are completed, exit study mode and reset rest
       if (completedToday === totalToday && totalToday > 0) {
-        setDoc(progressRef, { isStudying: false, restStartTime: null }, { merge: true }).catch(e => console.error(e));
+        supabase
+          .from('progress')
+          .update({ isStudying: false, restStartTime: null })
+          .eq('id', CHANNEL_ID)
+          .catch(e => console.error(e));
       }
 
       await updateTask(changedTask);
@@ -357,8 +386,11 @@ export default function BubuScreen({ onBack }) {
 
   const handleStartStudying = () => {
     try {
-      const progressRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-      setDoc(progressRef, { isStudying: true }, { merge: true }).catch(e => console.error(e));
+      supabase
+        .from('progress')
+        .update({ isStudying: true })
+        .eq('id', CHANNEL_ID)
+        .catch(e => console.error(e));
     } catch (e) {
       console.error("Error starting study mode:", e);
     }
@@ -366,8 +398,11 @@ export default function BubuScreen({ onBack }) {
 
   const handleTakeBreak = async () => {
     try {
-      const progressRef = doc(db, 'channels', CHANNEL_ID, 'progress', 'data');
-      setDoc(progressRef, { restStartTime: new Date().toISOString() }, { merge: true }).catch(e => console.error(e));
+      supabase
+        .from('progress')
+        .update({ restStartTime: new Date().toISOString() })
+        .eq('id', CHANNEL_ID)
+        .catch(e => console.error(e));
 
       // Schedule background push notification
       if (Platform.OS !== 'web') {
