@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
 import { supabase, CHANNEL_ID } from './supabase';
 
 const KEYS = {
@@ -30,7 +31,10 @@ const saveTaskToFirestore = (task) => {
     .from('tasks')
     .upsert(task)
     .then(({ error }) => {
-      if (error) console.error('Error saving task to Supabase', error);
+      if (error) {
+        console.error('Error saving task to Supabase', error);
+        Alert.alert("Database Error ❌", `Could not save task: ${error.message}`);
+      }
     });
 };
 
@@ -40,7 +44,10 @@ const deleteTaskFromFirestore = (taskId) => {
     .delete()
     .eq('id', taskId)
     .then(({ error }) => {
-      if (error) console.error('Error deleting task from Supabase', error);
+      if (error) {
+        console.error('Error deleting task from Supabase', error);
+        Alert.alert("Database Error ❌", `Could not delete task: ${error.message}`);
+      }
     });
 };
 
@@ -49,7 +56,10 @@ export const saveProgressToFirestore = (streak, history) => {
     .from('progress')
     .upsert({ id: CHANNEL_ID, streak, history }, { onConflict: 'id' })
     .then(({ error }) => {
-      if (error) console.error('Error saving progress to Supabase', error);
+      if (error) {
+        console.error('Error saving progress to Supabase', error);
+        Alert.alert("Database Error ❌", `Could not save progress: ${error.message}`);
+      }
     });
 };
 

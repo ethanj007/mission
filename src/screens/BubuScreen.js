@@ -169,7 +169,8 @@ export default function BubuScreen({ onBack }) {
         supabase
           .from('progress')
           .upsert({ id: CHANNEL_ID, restStartTime: null })
-          .then(() => {
+          .then(({ error }) => {
+            if (error) Alert.alert("Database Error ❌", error.message);
             Alert.alert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
           }).catch(err => {
             console.error("Error clearing restStartTime:", err);
@@ -343,6 +344,9 @@ export default function BubuScreen({ onBack }) {
         supabase
           .from('progress')
           .upsert({ id: CHANNEL_ID, isStudying: false, restStartTime: null })
+          .then(({ error }) => {
+            if (error) Alert.alert("Database Error ❌", `Could not finish study mode: ${error.message}`);
+          })
           .catch(e => console.error(e));
       }
 
@@ -387,9 +391,19 @@ export default function BubuScreen({ onBack }) {
       supabase
         .from('progress')
         .upsert({ id: CHANNEL_ID, isStudying: true })
-        .catch(e => console.error(e));
+        .then(({ error }) => {
+          if (error) {
+            console.error(error);
+            Alert.alert("Database Error ❌", `Could not start studying: ${error.message}`);
+          }
+        })
+        .catch(e => {
+          console.error(e);
+          Alert.alert("Database Error ❌", e.message);
+        });
     } catch (e) {
       console.error("Error starting study mode:", e);
+      Alert.alert("Error starting study", e.message);
     }
   };
 
@@ -398,7 +412,16 @@ export default function BubuScreen({ onBack }) {
       supabase
         .from('progress')
         .upsert({ id: CHANNEL_ID, restStartTime: new Date().toISOString() })
-        .catch(e => console.error(e));
+        .then(({ error }) => {
+          if (error) {
+            console.error(error);
+            Alert.alert("Database Error ❌", `Could not take break: ${error.message}`);
+          }
+        })
+        .catch(e => {
+          console.error(e);
+          Alert.alert("Database Error ❌", e.message);
+        });
 
       // Schedule background push notification
       if (Platform.OS !== 'web') {
