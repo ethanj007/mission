@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mission-bubu",
+    "name": "Mission Bubu",
     "slug": "mission-bubu",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,6 +10,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.joshuae.missionbubu",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

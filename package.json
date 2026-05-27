@@ -3,16 +3,28 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
-    "expo": "~56.0.5",
-    "expo-status-bar": "~56.0.4",
-    "react": "19.2.3",
-    "react-native": "0.85.3"
+    "@expo/metro-runtime": "~6.1.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "^54.0.0",
+    "expo-image": "~3.0.11",
+    "expo-notifications": "~0.32.17",
+    "expo-status-bar": "~3.0.9",
+    "firebase": "^12.13.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-svg": "15.12.1",
+    "react-native-web": "^0.21.0"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build": "expo export --platform web"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@expo/ngrok": "^4.1.3"
+  }
 }
