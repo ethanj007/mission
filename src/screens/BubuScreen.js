@@ -317,47 +317,40 @@ export default function BubuScreen({ onBack }) {
   };
 
   const proceedWithToggle = async (taskId, nextState) => {
-    const allTasks = await getTasks();
-    const updatedTasks = allTasks.map(t => {
-      if (t.id === taskId) {
-        return {
-          ...t,
-          completed: nextState,
-          completedAt: nextState ? new Date().toISOString() : null
-        };
-      }
-      return t;
-    });
+    const taskToToggle = tasks.find(t => t.id === taskId) || tomorrowTasks.find(t => t.id === taskId);
+    if (!taskToToggle) return;
 
-    const changedTask = updatedTasks.find(t => t.id === taskId);
-    if (changedTask) {
-      const todayTasks = updatedTasks.filter(t => t.assignedDate === todayStr);
-      const totalToday = todayTasks.length;
-      const completedToday = todayTasks.filter(t => t.completed).length;
+    const updatedTask = {
+      ...taskToToggle,
+      completed: nextState,
+      completedAt: nextState ? new Date().toISOString() : null
+    };
 
-      if (changedTask.completed) {
-        triggerKissAttack();
-      }
-
-      // If all tasks are completed, exit study mode and reset rest
-      if (completedToday === totalToday && totalToday > 0) {
-        supabase
-          .from('progress')
-          .upsert({ id: CHANNEL_ID, isStudying: false, restStartTime: null })
-          .then(({ error }) => {
-            if (error) Alert.alert("Database Error ❌", `Could not finish study mode: ${error.message}`);
-          })
-          .catch(e => console.error(e));
-      }
-
-      await updateTask(changedTask);
+    if (updatedTask.completed) {
+      triggerKissAttack();
     }
+
+    const todayTasks = tasks.map(t => t.id === taskId ? updatedTask : t);
+    const totalToday = todayTasks.length;
+    const completedToday = todayTasks.filter(t => t.completed).length;
+
+    // If all tasks are completed, exit study mode and reset rest
+    if (completedToday === totalToday && totalToday > 0) {
+      supabase
+        .from('progress')
+        .upsert({ id: CHANNEL_ID, isStudying: false, restStartTime: null })
+        .then(({ error }) => {
+          if (error) Alert.alert("Database Error ❌", `Could not finish study mode: ${error.message}`);
+        })
+        .catch(e => console.error(e));
+    }
+
+    await updateTask(updatedTask);
   };
 
   // Toggle completed status with review confirmation
   const handleToggleTask = async (taskId) => {
-    const allTasks = await getTasks();
-    const taskToToggle = allTasks.find(t => t.id === taskId);
+    const taskToToggle = tasks.find(t => t.id === taskId) || tomorrowTasks.find(t => t.id === taskId);
     if (!taskToToggle) return;
 
     if (!taskToToggle.completed) {
@@ -448,10 +441,19 @@ export default function BubuScreen({ onBack }) {
 
   // View details of a past day in a modal
   const handleViewHistoryDay = async (historyEntry) => {
-    const allTasks = await getTasks();
-    const dayTasks = allTasks.filter(t => t.assignedDate === historyEntry.date);
-    setHistoryTasks(dayTasks);
     setSelectedHistoryDay(historyEntry);
+    supabase
+      .from('tasks')
+      .select('*')
+      .eq('assignedDate', historyEntry.date)
+      .then(({ data, error }) => {
+        if (error) {
+          console.error(error);
+          Alert.alert("Database Error ❌", `Could not fetch history details: ${error.message}`);
+        } else if (data) {
+          setHistoryTasks(data);
+        }
+      });
   };
 
   // Calculate today's progress percentage

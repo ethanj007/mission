@@ -84,39 +84,60 @@ export const saveTasks = async (tasks) => {
 };
 
 export const addTask = async (task) => {
-  const tasks = await getTasks();
   const newTask = {
     id: String(Date.now() + Math.random().toString(36).substr(2, 9)),
     completed: false,
     ...task
   };
-  tasks.push(newTask);
   
-  await saveTasks(tasks);
-  saveTaskToFirestore(newTask); // fire and forget in background
+  // 1. Save to Supabase first
+  saveTaskToFirestore(newTask);
+  
+  // 2. Try to update local cache
+  try {
+    const tasks = await getTasks();
+    tasks.push(newTask);
+    await saveTasks(tasks);
+  } catch (e) {
+    console.warn("Local storage write skipped:", e);
+  }
   
   return newTask;
 };
 
 export const updateTask = async (updatedTask) => {
-  const tasks = await getTasks();
-  const index = tasks.findIndex(t => t.id === updatedTask.id);
-  if (index !== -1) {
-    tasks[index] = { ...tasks[index], ...updatedTask };
-    await saveTasks(tasks);
-    saveTaskToFirestore(tasks[index]); // fire and forget in background
+  // 1. Save to Supabase first
+  saveTaskToFirestore(updatedTask);
+
+  // 2. Try to update local cache
+  try {
+    const tasks = await getTasks();
+    const index = tasks.findIndex(t => t.id === updatedTask.id);
+    if (index !== -1) {
+      tasks[index] = { ...tasks[index], ...updatedTask };
+      await saveTasks(tasks);
+    } else {
+      tasks.push(updatedTask);
+      await saveTasks(tasks);
+    }
+  } catch (e) {
+    console.warn("Local storage update skipped:", e);
   }
-  return tasks;
+  return updatedTask;
 };
 
 export const deleteTask = async (taskId) => {
-  let tasks = await getTasks();
-  tasks = tasks.filter(t => t.id !== taskId);
-  
-  await saveTasks(tasks);
-  deleteTaskFromFirestore(taskId); // fire and forget in background
-  
-  return tasks;
+  // 1. Delete from Supabase first
+  deleteTaskFromFirestore(taskId);
+
+  // 2. Try to update local cache
+  try {
+    let tasks = await getTasks();
+    tasks = tasks.filter(t => t.id !== taskId);
+    await saveTasks(tasks);
+  } catch (e) {
+    console.warn("Local storage delete skipped:", e);
+  }
 };
 
 // --- PASSWORD API ---
