@@ -149,8 +149,7 @@ export default function DuduScreen({ onBack }) {
     try {
       await supabase
         .from('progress')
-        .update({ restDuration: Number(seconds) })
-        .eq('id', CHANNEL_ID);
+        .upsert({ id: CHANNEL_ID, restDuration: Number(seconds) });
       setDuduState('nodding');
       setTimeout(() => setDuduState('idle'), 1500);
     } catch (e) {

@@ -168,8 +168,7 @@ export default function BubuScreen({ onBack }) {
         // Clear restStartTime in Supabase when timer ends
         supabase
           .from('progress')
-          .update({ restStartTime: null })
-          .eq('id', CHANNEL_ID)
+          .upsert({ id: CHANNEL_ID, restStartTime: null })
           .then(() => {
             Alert.alert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
           }).catch(err => {
@@ -343,8 +342,7 @@ export default function BubuScreen({ onBack }) {
       if (completedToday === totalToday && totalToday > 0) {
         supabase
           .from('progress')
-          .update({ isStudying: false, restStartTime: null })
-          .eq('id', CHANNEL_ID)
+          .upsert({ id: CHANNEL_ID, isStudying: false, restStartTime: null })
           .catch(e => console.error(e));
       }
 
@@ -388,8 +386,7 @@ export default function BubuScreen({ onBack }) {
     try {
       supabase
         .from('progress')
-        .update({ isStudying: true })
-        .eq('id', CHANNEL_ID)
+        .upsert({ id: CHANNEL_ID, isStudying: true })
         .catch(e => console.error(e));
     } catch (e) {
       console.error("Error starting study mode:", e);
@@ -400,8 +397,7 @@ export default function BubuScreen({ onBack }) {
     try {
       supabase
         .from('progress')
-        .update({ restStartTime: new Date().toISOString() })
-        .eq('id', CHANNEL_ID)
+        .upsert({ id: CHANNEL_ID, restStartTime: new Date().toISOString() })
         .catch(e => console.error(e));
 
       // Schedule background push notification
