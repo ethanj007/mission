@@ -77,6 +77,14 @@ const getTomorrowDateString = () => {
   return `${year}-${month}-${day}`;
 };
 
+const showAlert = (title, message) => {
+  if (Platform.OS === 'web') {
+    alert(title + "\n\n" + message);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
 export default function BubuScreen({ onBack }) {
   const [tasks, setTasks] = useState([]);
   const [tomorrowTasks, setTomorrowTasks] = useState([]);
@@ -105,9 +113,13 @@ export default function BubuScreen({ onBack }) {
   const [timeLeft, setTimeLeft] = useState(0);
   const [showHistoryListModal, setShowHistoryListModal] = useState(false);
   const [showRevisePopup, setShowRevisePopup] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingTaskId, setPendingTaskId] = useState(null);
 
   const reviseScale = useRef(new Animated.Value(0.3)).current;
   const reviseOpacity = useRef(new Animated.Value(0)).current;
+  const confirmScale = useRef(new Animated.Value(0.3)).current;
+  const confirmOpacity = useRef(new Animated.Value(0)).current;
 
   const todayStr = getLocalDateString();
   const tomorrowStr = getTomorrowDateString();
@@ -170,11 +182,11 @@ export default function BubuScreen({ onBack }) {
           .from('progress')
           .upsert({ id: CHANNEL_ID, restStartTime: null })
           .then(({ error }) => {
-            if (error) Alert.alert("Database Error ❌", error.message);
-            Alert.alert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
+            if (error) showAlert("Database Error ❌", error.message);
+            showAlert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
           }).catch(err => {
             console.error("Error clearing restStartTime:", err);
-            Alert.alert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
+            showAlert("Break time over! 🧸", "Back to study mode, Bubu! 💕");
           });
       }
     }, 1000);
@@ -340,7 +352,7 @@ export default function BubuScreen({ onBack }) {
         .from('progress')
         .upsert({ id: CHANNEL_ID, isStudying: false, restStartTime: null })
         .then(({ error }) => {
-          if (error) Alert.alert("Database Error ❌", `Could not finish study mode: ${error.message}`);
+          if (error) showAlert("Database Error ❌", `Could not finish study mode: ${error.message}`);
         })
         .catch(e => console.error(e));
     }
@@ -354,26 +366,22 @@ export default function BubuScreen({ onBack }) {
     if (!taskToToggle) return;
 
     if (!taskToToggle.completed) {
-      Alert.alert(
-        "Review Mission 🧸",
-        "Bubu, have you understood everything and completed properly?",
-        [
-          {
-            text: "No ❌",
-            onPress: () => {
-              triggerRevisePopup();
-            },
-            style: "cancel"
-          },
-          {
-            text: "Yes! Yes! ✅",
-            onPress: async () => {
-              await proceedWithToggle(taskId, true);
-            }
-          }
-        ],
-        { cancelable: false }
-      );
+      setPendingTaskId(taskId);
+      setShowConfirmModal(true);
+      confirmScale.setValue(0.3);
+      confirmOpacity.setValue(0);
+      Animated.parallel([
+        Animated.spring(confirmScale, {
+          toValue: 1,
+          friction: 5,
+          useNativeDriver: true,
+        }),
+        Animated.timing(confirmOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        })
+      ]).start();
     } else {
       await proceedWithToggle(taskId, false);
     }
@@ -387,16 +395,16 @@ export default function BubuScreen({ onBack }) {
         .then(({ error }) => {
           if (error) {
             console.error(error);
-            Alert.alert("Database Error ❌", `Could not start studying: ${error.message}`);
+            showAlert("Database Error ❌", `Could not start studying: ${error.message}`);
           }
         })
         .catch(e => {
           console.error(e);
-          Alert.alert("Database Error ❌", e.message);
+          showAlert("Database Error ❌", e.message);
         });
     } catch (e) {
       console.error("Error starting study mode:", e);
-      Alert.alert("Error starting study", e.message);
+      showAlert("Error starting study", e.message);
     }
   };
 
@@ -408,12 +416,12 @@ export default function BubuScreen({ onBack }) {
         .then(({ error }) => {
           if (error) {
             console.error(error);
-            Alert.alert("Database Error ❌", `Could not take break: ${error.message}`);
+            showAlert("Database Error ❌", `Could not take break: ${error.message}`);
           }
         })
         .catch(e => {
           console.error(e);
-          Alert.alert("Database Error ❌", e.message);
+          showAlert("Database Error ❌", e.message);
         });
 
       // Schedule background push notification
@@ -449,7 +457,7 @@ export default function BubuScreen({ onBack }) {
       .then(({ data, error }) => {
         if (error) {
           console.error(error);
-          Alert.alert("Database Error ❌", `Could not fetch history details: ${error.message}`);
+          showAlert("Database Error ❌", `Could not fetch history details: ${error.message}`);
         } else if (data) {
           setHistoryTasks(data);
         }
@@ -836,6 +844,53 @@ export default function BubuScreen({ onBack }) {
               >
                 <Text style={styles.kissCloseButtonText}>Okay 🌸</Text>
               </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {showConfirmModal && (
+        <Modal
+          transparent={true}
+          visible={showConfirmModal}
+          animationType="none"
+          onRequestClose={() => setShowConfirmModal(false)}
+        >
+          <View style={styles.kissOverlay}>
+            <Animated.View style={[
+              styles.kissCard,
+              {
+                opacity: confirmOpacity,
+                transform: [{ scale: confirmScale }]
+              }
+            ]}>
+              <Text style={styles.kissTitle}>Review Mission 🧸</Text>
+              <Text style={styles.kissSubtitle}>Bubu, have you understood everything and completed properly?</Text>
+
+              <View style={{ flexDirection: 'row', gap: 12, width: '100%', marginTop: 20 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowConfirmModal(false);
+                    triggerRevisePopup();
+                  }}
+                  style={[styles.kissCloseButton, { backgroundColor: '#F49097', flex: 1, minHeight: 44, justifyContent: 'center' }]}
+                >
+                  <Text style={styles.kissCloseButtonText}>No ❌</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={async () => {
+                    setShowConfirmModal(false);
+                    if (pendingTaskId) {
+                      await proceedWithToggle(pendingTaskId, true);
+                    }
+                  }}
+                  style={[styles.kissCloseButton, { backgroundColor: '#E87D90', flex: 1, minHeight: 44, justifyContent: 'center' }]}
+                >
+                  <Text style={styles.kissCloseButtonText}>Yes! Yes! ✅</Text>
+                </TouchableOpacity>
+              </View>
             </Animated.View>
           </View>
         </Modal>
